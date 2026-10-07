@@ -18,9 +18,10 @@ CommandSigner, CommandSigningError = signing.CommandSigner, signing.CommandSigni
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("directory", type=Path, help="Owner-only directory containing the three slicer PEM files")
+    parser.add_argument("--trust-root", type=Path, help="Explicit independently obtained CA PEM (defaults to shipped vendor CAs)")
     args = parser.parse_args()
     try:
-        signer = CommandSigner(args.directory)
+        signer = CommandSigner(args.directory, trust_roots=args.trust_root.read_bytes() if args.trust_root else None)
         if not signer.configured:
             print(json.dumps({"valid": False, "reason": "bundle_missing"}))
             return 1

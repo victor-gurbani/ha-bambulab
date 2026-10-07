@@ -60,8 +60,13 @@ def _write_credentials(path, *, revoked=False, expired=False):
     return app_key
 
 
+def _test_signer(path):
+    cert_path = path / "slicer_cert.pem"
+    return CommandSigner(path, trust_roots=cert_path.read_bytes() if cert_path.exists() else None)
+
+
 def test_missing_credentials_fail_closed(tmp_path):
-    signer = CommandSigner(tmp_path)
+    signer = _test_signer(tmp_path)
     assert not signer.configured
     assert not signer.ready
     with pytest.raises(CommandSigningError):
@@ -89,14 +94,14 @@ def _review_vendor_crl(path, **changes):
 def test_reviewed_vendor_crl_requires_exact_bundle_and_deadline(tmp_path):
     _write_credentials(tmp_path, expired=True)
     with pytest.raises(CommandSigningError):
-        CommandSigner(tmp_path)
+        _test_signer(tmp_path)
     _review_vendor_crl(tmp_path)
-    signer = CommandSigner(tmp_path)
+    signer = _test_signer(tmp_path)
     assert signer.configured and signer.crl_stale and not signer.ready
     assert signer._valid_until < datetime.now(timezone.utc) + timedelta(days=8)
     _review_vendor_crl(tmp_path, crl_sha256="0" * 64)
     with pytest.raises(CommandSigningError):
-        CommandSigner(tmp_path)
+        _test_signer(tmp_path)
 
 
 @pytest.mark.parametrize("changes", [
@@ -109,19 +114,19 @@ def test_vendor_crl_review_rejects_invalid_scope_or_lifetime(tmp_path, changes):
     _write_credentials(tmp_path, expired=True)
     _review_vendor_crl(tmp_path, **changes)
     with pytest.raises(CommandSigningError):
-        CommandSigner(tmp_path)
+        _test_signer(tmp_path)
 
 
 def test_reviewed_vendor_crl_still_rejects_revoked_certificate(tmp_path):
     _write_credentials(tmp_path, expired=True, revoked=True)
     _review_vendor_crl(tmp_path)
     with pytest.raises(CommandSigningError, match="revoked"):
-        CommandSigner(tmp_path)
+        _test_signer(tmp_path)
 
 
 def test_provision_sign_encrypt_and_reset(tmp_path):
     app_key = _write_credentials(tmp_path)
-    signer = CommandSigner(tmp_path)
+    signer = _test_signer(tmp_path)
     assert signer.configured
     assert not signer.ready
 
@@ -182,6 +187,7 @@ def test_bambu_client_publish_uses_signed_envelope(tmp_path):
             "signing_path": str(tmp_path),
         }
     )
+    client.command_signer = _test_signer(tmp_path)
     device_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     device_cert = _certificate(device_key, "test-printer")
     provision = client.command_signer.build_provision_message()["security"]
@@ -228,7 +234,7 @@ def _make_ready(signer):
 def test_invalid_crl_blocks_credentials(tmp_path, kind):
     _write_credentials(tmp_path, **{kind: True})
     with pytest.raises(CommandSigningError):
-        CommandSigner(tmp_path)
+        _test_signer(tmp_path)
 
 
 def test_invalid_crl_signature_blocks_credentials(tmp_path):
@@ -238,7 +244,7 @@ def test_invalid_crl_signature_blocks_credentials(tmp_path):
     data[pos] = ord('A') if data[pos] != ord('A') else ord('B')
     (tmp_path / "slicer_crl.pem").write_bytes(data)
     with pytest.raises(CommandSigningError):
-        CommandSigner(tmp_path)
+        _test_signer(tmp_path)
 
 
 def test_permissions_and_symlinks_fail_closed(tmp_path):
@@ -246,17 +252,17 @@ def test_permissions_and_symlinks_fail_closed(tmp_path):
     key = tmp_path / "slicer_key.pem"
     key.chmod(0o644)
     with pytest.raises(CommandSigningError):
-        CommandSigner(tmp_path)
+        _test_signer(tmp_path)
     key.chmod(0o600)
     key.rename(tmp_path / "real.pem")
     key.symlink_to(tmp_path / "real.pem")
     with pytest.raises(OSError):
-        CommandSigner(tmp_path)
+        _test_signer(tmp_path)
 
 
 def test_unsolicited_and_stale_provision_reports_do_not_authorize(tmp_path):
     _write_credentials(tmp_path)
-    signer = CommandSigner(tmp_path)
+    signer = _test_signer(tmp_path)
     _, reply = _make_ready(signer)
     signer.reset_session()
     assert not signer.handle_security_report(reply)
@@ -273,8 +279,8 @@ def test_sequence_survives_restart_and_range_boundary(tmp_path):
     _write_credentials(tmp_path)
     (tmp_path / "sequence.json").write_text('{"next":29999}')
     (tmp_path / "sequence.json").chmod(0o600)
-    first = CommandSigner(tmp_path).build_provision_message()["security"]["sequence_id"]
-    second = CommandSigner(tmp_path).build_provision_message()["security"]["sequence_id"]
+    first = _test_signer(tmp_path).build_provision_message()["security"]["sequence_id"]
+    second = _test_signer(tmp_path).build_provision_message()["security"]["sequence_id"]
     assert [first, second] == ["29999", "30000"]
 
 
@@ -284,12 +290,12 @@ def test_corrupt_or_exhausted_sequence_fails_closed(tmp_path, counter):
     (tmp_path / "sequence.json").write_text(counter)
     (tmp_path / "sequence.json").chmod(0o600)
     with pytest.raises(CommandSigningError):
-        CommandSigner(tmp_path).build_provision_message()
+        _test_signer(tmp_path).build_provision_message()
 
 
 def test_material_expiry_during_running_session_disables_controls(tmp_path):
     _write_credentials(tmp_path)
-    signer = CommandSigner(tmp_path)
+    signer = _test_signer(tmp_path)
     _make_ready(signer)
     signer._valid_until = datetime.now(timezone.utc) - timedelta(seconds=1)
     assert not signer.ready
@@ -299,7 +305,7 @@ def test_material_expiry_during_running_session_disables_controls(tmp_path):
 
 def test_verification_rejection_invalidates_only_our_own_command(tmp_path):
     _write_credentials(tmp_path)
-    signer = CommandSigner(tmp_path)
+    signer = _test_signer(tmp_path)
     _make_ready(signer)
     payload = json.loads(signer.sign_fan_command(3, 0))
     assert not signer.handle_print_report({"sequence_id": "unrelated", "err_code": 84033545})
@@ -311,7 +317,7 @@ def test_verification_rejection_invalidates_only_our_own_command(tmp_path):
 def test_concurrent_signer_instances_reserve_unique_sequences(tmp_path):
     from concurrent.futures import ThreadPoolExecutor
     _write_credentials(tmp_path)
-    signers = [CommandSigner(tmp_path) for _ in range(4)]
+    signers = [_test_signer(tmp_path) for _ in range(4)]
     with ThreadPoolExecutor(max_workers=4) as executor:
         values = list(executor.map(lambda i: int(signers[i % 4].build_provision_message()["security"]["sequence_id"]), range(20)))
     assert sorted(values) == list(range(20000, 20020))
@@ -338,7 +344,7 @@ def test_standalone_bundle_validator_runs_without_homeassistant(tmp_path):
     import subprocess
     _write_credentials(tmp_path)
     tool = Path(__file__).parents[2] / "tools/check_signer.py"
-    result = subprocess.run([sys.executable, str(tool), str(tmp_path)], capture_output=True, text=True, check=True)
+    result = subprocess.run([sys.executable, str(tool), str(tmp_path), "--trust-root", str(tmp_path / "slicer_cert.pem")], capture_output=True, text=True, check=True)
     assert json.loads(result.stdout)["valid"] is True
     assert "PRIVATE KEY" not in result.stdout + result.stderr
     result = subprocess.run([sys.executable, str(tool), str(tmp_path / "missing")], capture_output=True, text=True)
@@ -348,9 +354,9 @@ def test_standalone_bundle_validator_runs_without_homeassistant(tmp_path):
 
 def test_status_is_allowlisted_and_reports_lifecycle(tmp_path):
     assert CommandSigner(None).status()["reason"] == "disabled"
-    assert CommandSigner(tmp_path).status()["reason"] == "credentials_missing"
+    assert _test_signer(tmp_path).status()["reason"] == "credentials_missing"
     _write_credentials(tmp_path)
-    signer = CommandSigner(tmp_path)
+    signer = _test_signer(tmp_path)
     status = signer.status()
     assert status["reason"] == "provisioning_required"
     assert status["configured"] and not status["ready"]
@@ -364,6 +370,6 @@ def test_status_is_allowlisted_and_reports_lifecycle(tmp_path):
 def test_status_warns_before_review_deadline(tmp_path):
     _write_credentials(tmp_path, expired=True)
     _review_vendor_crl(tmp_path, valid_until=(datetime.now(timezone.utc) + timedelta(days=2)).isoformat())
-    signer = CommandSigner(tmp_path)
+    signer = _test_signer(tmp_path)
     status = signer.status()
     assert status["configured"] and status["crl_stale"] and status["review_due"]

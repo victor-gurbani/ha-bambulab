@@ -62,8 +62,14 @@ def _encrypt_blocks(public_key: rsa.RSAPublicKey, plaintext: str) -> str:
 class CommandSigner:
     """Provision printer trust and sign authorization-protected commands."""
 
-    def __init__(self, credentials_dir: str | os.PathLike[str] | None) -> None:
+    def __init__(self, credentials_dir: str | os.PathLike[str] | None, *,
+                 trust_roots: bytes | None = None) -> None:
         self._credentials_dir = Path(credentials_dir) if credentials_dir else None
+        # These anchors come from the integration's shipped vendor CA resource,
+        # never from a credential bundle or a provisioning reply. Tests/tools
+        # may explicitly supply an independently selected trust anchor instead.
+        anchors = trust_roots if trust_roots is not None else (Path(__file__).parent / "certs" / "bambu.cert").read_bytes()
+        self._trust_roots = x509.load_pem_x509_certificates(anchors)
         self._lock = threading.RLock()
         self._private_key: rsa.RSAPrivateKey | None = None
         self._app_certificate_pem = ""
@@ -140,6 +146,12 @@ class CommandSigner:
         cert_pem = self._read_private(cert_path)
         chain = x509.load_pem_x509_certificates(cert_pem)
         certificate = chain[0]
+        chain = self._validate_app_chain(chain)
+        try:
+            if not certificate.extensions.get_extension_for_class(x509.KeyUsage).value.digital_signature:
+                raise CommandSigningError("application certificate cannot sign commands")
+        except x509.ExtensionNotFound:
+            pass
         cert_public_key = certificate.public_key()
         if not isinstance(cert_public_key, rsa.RSAPublicKey):
             raise CommandSigningError("slicer certificate key is not RSA")
@@ -190,6 +202,55 @@ class CommandSigner:
             self._crl_pem = crl_pem
             self._cert_id = _cert_id(certificate)
             self._valid_from, self._valid_until = max(starts), min(ends)
+
+    def _validate_app_chain(self, chain: list[x509.Certificate]) -> list[x509.Certificate]:
+        """Require a bounded, constrained path to an independently trusted CA."""
+        now = datetime.now(timezone.utc)
+        trusted = {cert.fingerprint(hashes.SHA256()) for cert in self._trust_roots}
+        current = chain[0]
+        path = []
+        seen = set()
+        ca_below = 0
+        for _ in range(8):
+            fingerprint = current.fingerprint(hashes.SHA256())
+            if fingerprint in seen:
+                raise CommandSigningError("application certificate chain contains a cycle")
+            seen.add(fingerprint)
+            path.append(current)
+            if any(extension.critical and not isinstance(extension.value, (x509.BasicConstraints, x509.KeyUsage))
+                   for extension in current.extensions):
+                raise CommandSigningError("application certificate has an unsupported critical extension")
+            if not current.not_valid_before_utc <= now < current.not_valid_after_utc:
+                raise CommandSigningError("application certificate chain is expired or not yet valid")
+            if fingerprint in trusted:
+                return path
+            issuers = [cert for cert in chain[1:] + self._trust_roots
+                       if cert.subject == current.issuer and cert.fingerprint(hashes.SHA256()) not in seen]
+            issuer = None
+            for candidate in issuers:
+                try:
+                    current.verify_directly_issued_by(candidate)
+                    issuer = candidate
+                    break
+                except (ValueError, TypeError, InvalidSignature):
+                    continue
+            if issuer is None:
+                raise CommandSigningError("application certificate chain has no trusted issuer")
+            try:
+                constraints = issuer.extensions.get_extension_for_class(x509.BasicConstraints).value
+                if not constraints.ca or (constraints.path_length is not None and ca_below > constraints.path_length):
+                    raise CommandSigningError("application issuer CA constraints are invalid")
+                try:
+                    usage = issuer.extensions.get_extension_for_class(x509.KeyUsage).value
+                    if not usage.key_cert_sign:
+                        raise CommandSigningError("application issuer cannot sign certificates")
+                except x509.ExtensionNotFound:
+                    pass
+            except x509.ExtensionNotFound:
+                raise CommandSigningError("application issuer has no CA constraints") from None
+            ca_below += 1
+            current = issuer
+        raise CommandSigningError("application certificate chain is too long")
 
     def _reviewed_crl_deadline(self, cert: bytes, crl: bytes, now: datetime) -> datetime:
         path = self._credentials_dir / "crl_compatibility.json"

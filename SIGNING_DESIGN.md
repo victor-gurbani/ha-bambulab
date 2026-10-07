@@ -163,3 +163,25 @@ not renew credentials, extend compatibility receipts or replay commands.
 This closes the explicit-consent gap and provides lifecycle observability.
 Atomic credential replacement, supported renewal sourcing, authenticated
 device trust and final licensing/architecture still require further work.
+
+## Independently anchored application trust (7 October)
+
+Application certificate loading now requires a bounded (at most eight
+certificates), signature-verified path to the vendor CAs already shipped in
+`pybambu/certs/bambu.cert`. The bundle and provisioning reply cannot add
+trusted roots. Certificate dates, CA BasicConstraints/path lengths and issuer
+keyCertSign usage are enforced; leaf digitalSignature usage is enforced when
+present. Unsupported critical extensions are refused rather than silently
+ignored. Only the verified path may supply CRL verification issuers, preventing
+an unrelated appended certificate from authenticating a fabricated CRL.
+
+Generated tests explicitly select their own independent fixture anchor. The
+offline validator offers `--trust-root` for an explicitly chosen independent
+anchor, never automatically trusts a bundle root, and defaults to shipped
+vendor CAs. Existing vendor CA resources and licenses are unchanged.
+
+This closes the missing application-chain anchoring gap. It does **not** yet
+validate the provisioning device chain or bind its leaf to the intended printer;
+correlation is still not device authentication. No claim of universal PKIX
+profile support is made. No expiry policy or local compatibility review was
+extended.

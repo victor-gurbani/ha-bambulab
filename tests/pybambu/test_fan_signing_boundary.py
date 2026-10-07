@@ -11,13 +11,13 @@ from cryptography.hazmat.primitives.asymmetric import padding
 from pybambu.bambu_client import BambuClient
 from pybambu.const import FansEnum
 from pybambu.signing import CommandSigner, CommandSigningError
-from test_signing import _make_ready, _write_credentials
+from test_signing import _make_ready, _write_credentials, _test_signer
 
 
 @pytest.fixture
 def ready(tmp_path):
     _write_credentials(tmp_path)
-    signer = CommandSigner(tmp_path)
+    signer = _test_signer(tmp_path)
     key, _ = _make_ready(signer)
     return signer, key
 
