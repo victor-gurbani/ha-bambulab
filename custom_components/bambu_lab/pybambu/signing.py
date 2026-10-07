@@ -99,6 +99,30 @@ class CommandSigner:
         with self._lock:
             return self.configured and self._provisioned and self._device_public_key is not None
 
+    def status(self) -> dict[str, Any]:
+        """Allowlisted lifecycle diagnostics; never export credential objects."""
+        with self._lock:
+            now = datetime.now(timezone.utc)
+            if self._credentials_dir is None:
+                reason = "disabled"
+            elif not self._private_key:
+                reason = "credentials_missing"
+            elif not self.configured:
+                reason = "credentials_expired"
+            elif not self.ready:
+                reason = "provisioning_required"
+            else:
+                reason = "ready"
+            return {
+                "reason": reason,
+                "configured": self.configured,
+                "ready": self.ready,
+                "crl_stale": self.crl_stale,
+                "valid_until": self._valid_until.isoformat() if self._valid_until else None,
+                "review_due": bool(self._valid_until and
+                                   self._valid_until - now <= timedelta(days=7)),
+            }
+
     def _load_credentials(self) -> None:
         if self._credentials_dir is None:
             return

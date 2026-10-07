@@ -344,3 +344,26 @@ def test_standalone_bundle_validator_runs_without_homeassistant(tmp_path):
     result = subprocess.run([sys.executable, str(tool), str(tmp_path / "missing")], capture_output=True, text=True)
     assert result.returncode == 1
     assert json.loads(result.stdout) == {"valid": False, "reason": "bundle_missing"}
+
+
+def test_status_is_allowlisted_and_reports_lifecycle(tmp_path):
+    assert CommandSigner(None).status()["reason"] == "disabled"
+    assert CommandSigner(tmp_path).status()["reason"] == "credentials_missing"
+    _write_credentials(tmp_path)
+    signer = CommandSigner(tmp_path)
+    status = signer.status()
+    assert status["reason"] == "provisioning_required"
+    assert status["configured"] and not status["ready"]
+    assert set(status) == {"reason", "configured", "ready", "crl_stale", "valid_until", "review_due"}
+    assert str(tmp_path) not in json.dumps(status)
+    signer._valid_until = datetime.now(timezone.utc) - timedelta(seconds=1)
+    assert signer.status()["reason"] == "credentials_expired"
+    assert signer.status()["review_due"]
+
+
+def test_status_warns_before_review_deadline(tmp_path):
+    _write_credentials(tmp_path, expired=True)
+    _review_vendor_crl(tmp_path, valid_until=(datetime.now(timezone.utc) + timedelta(days=2)).isoformat())
+    signer = CommandSigner(tmp_path)
+    status = signer.status()
+    assert status["configured"] and status["crl_stale"] and status["review_due"]

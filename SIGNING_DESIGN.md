@@ -1,8 +1,9 @@
 # Signed cloud fan controls — experimental design for review
 
-This draft demonstrates opt-in signed/encrypted fan commands on cloud-paired
-X1C firmware. **It is not a turnkey HACS release or a request to merge before
-the architecture, licensing and credential lifecycle are agreed.**
+This contribution implements opt-in signed/encrypted fan commands on cloud-paired
+X1C firmware. **It is open for normal review, not a draft.** It is not yet a turnkey HACS
+release; remaining trust, licensing and lifecycle limitations are documented
+below rather than used to defer implementation.
 
 ## Evidence and credit
 
@@ -68,7 +69,7 @@ honest review, **not proposed as an automatically renewed default**.
 
 The signing module, signing fixtures and standalone validator are supplied
 under AGPL-3.0-only (`COPYING.signing`). Existing upstream MIT notices remain
-intact; this draft does not silently claim those additions are MIT or relicense
+intact; this contribution does not silently claim those additions are MIT or relicense
 the upstream project. Distribution of a combined work needs the corresponding
 AGPL obligations considered before merge.
 
@@ -106,7 +107,7 @@ Other decisions before readiness:
   ready by simply rolling its deadline forward; renewal needs a supported
   source and an explicit policy for when that source is unavailable.
 
-The independent fan correctness changes in #2120 have merged. This draft is
+The independent fan correctness changes in #2120 have merged. This branch is
 synchronized with `main` after that merge; those fixes no longer form part of
 its feature diff. Synchronizing the branch does not resolve the gates above.
 
@@ -141,3 +142,24 @@ Still blocked: independent trust anchors and device identity policy, complete
 application-chain validation, explicit setup/repair UX, a fresh revocation
 source, renewal, and acceptable licensing/architecture. No stale-CRL deadline
 was extended and no licensing notice was removed in this revision.
+
+## Explicit consent and lifecycle diagnostics (7 October)
+
+The options flow now exposes **Enable experimental signed fan controls** in
+Advanced options for both cloud and LAN entries. It is disabled by default,
+including upgrades of existing entries. Only the literal boolean `True` enables
+the credential path; directory/file presence, strings and numeric values do
+not count as consent. Disabling it reloads the entry and prevents further
+signed commands, while ordinary telemetry/light traffic remains unchanged.
+
+The operator still supplies the private bundle at the documented fixed path.
+Configuration forms never accept or display PEMs, keys or arbitrary paths.
+Diagnostics export only allowlisted readiness, review deadline and stable
+reason codes: disabled, credentials_missing, credentials_invalid,
+credentials_expired, provisioning_required, ready. The private bundle path is
+redacted. A deadline within seven days is flagged; diagnostic generation does
+not renew credentials, extend compatibility receipts or replay commands.
+
+This closes the explicit-consent gap and provides lifecycle observability.
+Atomic credential replacement, supported renewal sourcing, authenticated
+device trust and final licensing/architecture still require further work.

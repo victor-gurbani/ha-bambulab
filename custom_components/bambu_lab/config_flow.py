@@ -871,6 +871,7 @@ class BambuOptionsFlowHandler(config_entries.OptionsFlow):
                     options["usage_hours"] = float(user_input['usage_hours'])
                     options["disable_ssl_verify"] = user_input['advanced']['disable_ssl_verify']
                     options["enable_firmware_update"] = user_input['advanced']['enable_firmware_update']
+                    options["enable_signed_fans"] = user_input['advanced'].get('enable_signed_fans', False)
                     options["print_cache_count"] = max(-1, int(user_input['print_cache_count']))
                     options["timelapse_cache_count"] = max(-1, int(user_input['timelapse_cache_count']))
                     options["force_ip"] = force_ip
@@ -920,6 +921,7 @@ class BambuOptionsFlowHandler(config_entries.OptionsFlow):
             vol.Schema({
                 vol.Required('disable_ssl_verify', default=default_disable_ssl_verify): BOOLEAN_SELECTOR,
                 vol.Required('enable_firmware_update', default=default_enable_firmware_update): BOOLEAN_SELECTOR,
+                vol.Optional('enable_signed_fans', default=self._config_entry.options.get('enable_signed_fans', False) if user_input is None else user_input.get('advanced', {}).get('enable_signed_fans', False)): BOOLEAN_SELECTOR,
             }),
             {'collapsed': True},
         )
@@ -968,6 +970,7 @@ class BambuOptionsFlowHandler(config_entries.OptionsFlow):
                 options["usage_hours"] = float(user_input['usage_hours'])
                 options["disable_ssl_verify"] = user_input['advanced']['disable_ssl_verify']
                 options["enable_firmware_update"] = user_input['advanced']['enable_firmware_update']
+                options["enable_signed_fans"] = user_input['advanced'].get('enable_signed_fans', False)
                 options["force_ip"] = (user_input['host'] != bambu.get_device().info.ip_address)
 
                 title = self._config_entry.data['serial']
@@ -1011,6 +1014,7 @@ class BambuOptionsFlowHandler(config_entries.OptionsFlow):
             vol.Schema({
                 vol.Required('disable_ssl_verify', default=default_disable_ssl_verify): BOOLEAN_SELECTOR,
                 vol.Required('enable_firmware_update', default=default_enable_firmware_update): BOOLEAN_SELECTOR,
+                vol.Optional('enable_signed_fans', default=self._config_entry.options.get('enable_signed_fans', False) if user_input is None else user_input.get('advanced', {}).get('enable_signed_fans', False)): BOOLEAN_SELECTOR,
             }),
             {'collapsed': True},
         )

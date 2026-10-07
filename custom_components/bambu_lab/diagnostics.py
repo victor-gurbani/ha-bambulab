@@ -25,7 +25,8 @@ TO_REDACT = [
     "username",
     "cover",
     "deviceId",
-    "modelId"
+    "modelId",
+    "signing_path"
 ]
 
 
@@ -131,4 +132,7 @@ async def async_get_config_entry_diagnostics(
         },
         "device_state": async_redact_data(device_state, TO_REDACT),
         "feature_support": feature_support,
+        "signed_fans": (coordinator.client.command_signer.status()
+                        if not coordinator.client._signer_credentials_rejected else
+                        {"reason": "credentials_invalid", "configured": False, "ready": False}),
     }

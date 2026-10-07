@@ -179,7 +179,8 @@
             "description": "These advanced options are early or risky functionality. Read the documentation and use them at your own risk.",
             "data": {
               "disable_ssl_verify": "Disable SSL verification",
-              "enable_firmware_update": "Enable firmware update support"
+              "enable_firmware_update": "Enable firmware update support",
+                        "enable_signed_fans": "Enable experimental signed fan controls (requires a valid local bundle)"
             }
           }
         }
@@ -200,7 +201,8 @@
             "description": "These advanced options are early or risky functionality. Read the documentation and use them at your own risk.",
             "data": {
               "disable_ssl_verify": "Disable SSL verification",
-              "enable_firmware_update": "Enable firmware update support"
+              "enable_firmware_update": "Enable firmware update support",
+                        "enable_signed_fans": "Enable experimental signed fan controls (requires a valid local bundle)"
             }
           }
         }

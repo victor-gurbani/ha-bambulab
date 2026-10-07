@@ -79,9 +79,10 @@ class BambuDataUpdateCoordinator(DataUpdateCoordinator):
         config.update(entry.options.items())
         config['user_language'] = hass.config.language
         config['file_cache_path'] = self.get_file_cache_directory(config['serial'])
-        config['signing_path'] = hass.config.path(
+        # File placement alone must not enable privileged commands.
+        config['signing_path'] = (hass.config.path(
             ".storage", "bambu_lab_signing", config['serial']
-        )
+        ) if config.get('enable_signed_fans') is True else None)
         self.client = BambuClient(config)
             
         self._updatedDevice = False

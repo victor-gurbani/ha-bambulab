@@ -370,6 +370,7 @@ class BambuClient:
         self._device_type = config.get('device_type', 'unknown').upper()
         self._local_mqtt = config.get('local_mqtt', False)
         self._serial = config.get('serial', '')
+        self._signer_credentials_rejected = False
         try:
             self.command_signer = CommandSigner(config.get('signing_path'))
         except (CommandSigningError, OSError, ValueError) as error:
@@ -377,6 +378,7 @@ class BambuClient:
             # printer telemetry. Leave controls fail-closed instead.
             LOGGER.warning("Cloud command signer credentials were rejected (%s)", type(error).__name__)
             self.command_signer = CommandSigner(None)
+            self._signer_credentials_rejected = True
         self._last_signer_provision_attempt = 0.0
         self._enable_camera = config.get('enable_camera', True) and (self.host != "")
         self._enable_ftp = (self.host != "")
